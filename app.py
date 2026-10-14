@@ -51,8 +51,9 @@ if f.empty:
 if len(f) < K.MIN_PEDIDOS:
     st.info(f"Los filtros dejan solo {len(f)} pedidos. Los indicadores pueden ser poco estables.")
 
-tab1, tab2, tab3, tab_com, tab4 = st.tabs(
-    ["Vista ejecutiva", "Análisis territorial", "Detalle operativo", "Comité directivo", "Documentación"])
+tab1, tab2, tab3, tab_hall, tab_com, tab4 = st.tabs(
+    ["Vista ejecutiva", "Análisis territorial", "Detalle operativo", "Hallazgos", "Comité directivo",
+     "Documentación"])
 
 # =====================================================================
 # 1. Vista ejecutiva
@@ -240,7 +241,141 @@ with tab3:
                "Por privacidad no mostramos el identificador del pedido: ese detalle queda para los equipos autorizados.")
 
 # =====================================================================
-# 4. Comité directivo (semana 3): del dashboard a la decisión
+# 4b. Hallazgos (semana 3): las mismas vistas de las láminas 5 a 8 de la presentación
+# =====================================================================
+with tab_hall:
+    st.subheader("Cuatro hallazgos para el comité")
+    st.caption("Cada vista separa el resultado técnico, el hallazgo analítico y la implicación de gestión. "
+               "Los gráficos usan el mismo orden y colores que la presentación.")
+    th = K.tabla_ciudades(f)
+    if len(th) < 6:
+        st.info("Esta sección compara las seis ciudades. Restablece el filtro de provincia para verla completa.")
+    else:
+        ROJO, VERDE, AMBAR, AZUL, GRIS = "#c0392b", "#2e8b57", "#e0a100", "#1f4e79", "#8c8c8c"
+        provincia_de = {c: p for p, c in K.CIUDAD.items()}
+        u = K.UMBRALES_COMITE
+
+        def etiqueta_solidez(texto, color):
+            st.markdown(f"<span style='background:{color}22;border:1px solid {color};border-radius:14px;"
+                        f"padding:3px 12px;font-weight:600'>{texto}</span>", unsafe_allow_html=True)
+
+        def grafico(orden, col, titulo, colores, fmt, linea=None, etiqueta_linea=""):
+            d = th.loc[orden].reset_index()
+            d["ciudad_p"] = d["ciudad"].map(lambda c: f"{c} ({provincia_de[c]})")
+            fig = go.Figure(go.Bar(x=d[col], y=d["ciudad_p"], orientation="h", marker_color=colores,
+                                   text=d[col], texttemplate=fmt, textposition="outside", cliponaxis=False,
+                                   customdata=d[["pedidos"]],
+                                   hovertemplate="<b>%{y}</b><br>%{x:,.2f}<br>Pedidos: %{customdata[0]:,}<extra></extra>"))
+            if linea is not None:
+                fig.add_vline(x=linea, line_dash="dash", line_color="gray", annotation_text=etiqueta_linea)
+            fig.update_yaxes(autorange="reversed")
+            fig.update_xaxes(rangemode="tozero")
+            fig.update_layout(title=titulo, template="plotly_white", height=420, margin=dict(r=60))
+            return fig
+
+        def bloques(tecnico, hallazgo, implicacion):
+            c1, c2, c3 = st.columns(3)
+            with c1.container(border=True):
+                st.markdown("**RESULTADO TÉCNICO**")
+                st.write(tecnico)
+            with c2.container(border=True):
+                st.markdown("**HALLAZGO ANALÍTICO**")
+                st.write(hallazgo)
+            with c3.container(border=True):
+                st.markdown("**IMPLICACIÓN DE GESTIÓN**")
+                st.write(implicacion)
+
+        eleccion = st.radio("Hallazgo", ["Comercial", "Operativo", "Financiero", "Atención al cliente"],
+                            horizontal=True)
+        g = th.loc
+
+        if eleccion == "Comercial":
+            etiqueta_solidez("Hallazgo robusto", VERDE)
+            orden = th.sort_values("ventas", ascending=False).index.tolist()
+            col = [AZUL if c in ("Quito", "Guayaquil") else GRIS for c in orden]
+            st.plotly_chart(grafico(orden, "ventas", "Ventas asociadas por ciudad (USD)", col, "$%{x:,.0f}"),
+                            use_container_width=True)
+            top2 = (g["Quito", "ventas"] + g["Guayaquil", "ventas"]) / th["ventas"].sum() * 100
+            resto = th.drop(["Quito", "Guayaquil"])
+            bloques(f"Quito ${g['Quito', 'ventas']:,.0f} y Guayaquil ${g['Guayaquil', 'ventas']:,.0f} suman el "
+                    f"{top2:.1f} % de ${th['ventas'].sum():,.0f}. Ticket promedio ≈ USD "
+                    f"{(g['Quito', 'ventas'] + g['Guayaquil', 'ventas']) / (g['Quito', 'pedidos'] + g['Guayaquil', 'pedidos']):.1f} "
+                    f"en ambas, frente a ≈ USD {resto['ventas'].sum() / resto['pedidos'].sum():.0f} en el resto.",
+                    "El crecimiento comercial depende de dos plazas, y son también las de mayor ticket.",
+                    "Corregir rutas y servicio sin restringir el crecimiento. Cualquier medida en Guayaquil "
+                    "debe proteger el volumen.")
+
+        elif eleccion == "Operativo":
+            etiqueta_solidez("Hallazgo robusto (Guayaquil) · señal relevante (Manta)", VERDE)
+            orden = th.sort_values("a_tiempo").index.tolist()
+            col = [ROJO if th.loc[c, "a_tiempo"] < u["a_tiempo"] else VERDE for c in orden]
+            st.plotly_chart(grafico(orden, "a_tiempo", f"Entregas a tiempo según SLA del canal (%) · meta {u['a_tiempo']:g} %",
+                                    col, "%{x:.1f} %", linea=u["a_tiempo"], etiqueta_linea="Meta"),
+                            use_container_width=True)
+            ex = f[(f["ciudad"] == "Guayaquil") & (f["canal_entrega"] == "Express")]["a_tiempo"].mean() * 100
+            bloques(f"Loja {g['Loja', 'a_tiempo']:.1f} %, Manta {g['Manta', 'a_tiempo']:.1f} % y Guayaquil "
+                    f"{g['Guayaquil', 'a_tiempo']:.1f} % frente a la meta de {u['a_tiempo']:g} %. Distancia media: "
+                    f"{g['Loja', 'dist_media']:.1f} km (Loja) y {g['Manta', 'dist_media']:.1f} km (Manta). "
+                    f"Express en Guayaquil: {ex:.0f} %.",
+                    "El incumplimiento coincide con rutas largas: sugiere un componente estructural de ruta "
+                    "antes que de gestión local.",
+                    "Revisar rutas y ventanas de entrega, empezando por Guayaquil. "
+                    "Cuenca, Ambato y Quito superan la meta.")
+            st.caption("El SLA por canal (Express 120, Estándar urbano 180, Programado 210 min) es un supuesto "
+                       "del grupo que Operaciones debe validar. Editable en `kpis.py` (SLA).")
+
+        elif eleccion == "Financiero":
+            etiqueta_solidez("Hallazgo robusto", VERDE)
+            orden = th.sort_values("usd_por_km").index.tolist()
+            col = [ROJO if th.loc[c, "usd_por_km"] < u["usd_por_km"] else VERDE for c in orden]
+            st.plotly_chart(grafico(orden, "usd_por_km", f"Eficiencia logística: ventas por km recorrido (USD/km) · umbral {u['usd_por_km']:g}",
+                                    col, "%{x:.2f}", linea=u["usd_por_km"], etiqueta_linea="Umbral"),
+                            use_container_width=True)
+            bloques(f"Guayaquil {g['Guayaquil', 'usd_por_km']:.2f} vs. Quito {g['Quito', 'usd_por_km']:.2f} USD/km "
+                    f"con ticket similar. Recorre {g['Guayaquil', 'dist_media']:.1f} km por pedido frente a "
+                    f"{g['Quito', 'dist_media']:.1f} km en Quito. Manta {g['Manta', 'usd_por_km']:.2f} y Loja {g['Loja', 'usd_por_km']:.2f}.",
+                    "Cada dólar vendido en Guayaquil exige más recorrido: es consistente con la caída de margen "
+                    "que reporta el panel.",
+                    "Consolidar pedidos y optimizar rutas para llevar la eficiencia a 2,80. "
+                    "Integrar costos reales para confirmar el efecto.")
+            st.caption("La base no trae costos ni margen: USD por km es una aproximación de la presión logística, "
+                       "no un margen.")
+
+        else:
+            etiqueta_solidez("Señal relevante", AMBAR)
+            orden = th.sort_values("tasa_reclamos", ascending=False).index.tolist()
+            col = [ROJO if th.loc[c, "tasa_reclamos"] > 50 else AMBAR if th.loc[c, "tasa_reclamos"] > u["tasa_reclamos"]
+                   else VERDE for c in orden]
+            fig_c = grafico(orden, "tasa_reclamos", f"Reclamos por mil pedidos (‰) · umbral {u['tasa_reclamos']:g}",
+                            col, "%{x:.1f}", linea=u["tasa_reclamos"], etiqueta_linea="Umbral")
+            fig_c.data[0].error_x = dict(type="data", symmetric=False, color="black", thickness=1,
+                                         array=(th.loc[orden, "ic_alto"] - th.loc[orden, "tasa_reclamos"]).values,
+                                         arrayminus=(th.loc[orden, "tasa_reclamos"] - th.loc[orden, "ic_bajo"]).values)
+            fig_c.update_xaxes(range=[0, th["ic_alto"].max() * 1.15])
+            st.plotly_chart(fig_c, use_container_width=True)
+            st.caption("Las barras de error son el intervalo de confianza al 95 %.")
+
+            ra = K.reporte_agregado(f, ["ciudad", "canal_entrega"])
+            z = ra.pivot(index="ciudad", columns="canal_entrega", values="tasa_reclamos").reindex(index=orden)
+            z = z[[c for c in ORDEN_CANAL if c in z.columns]]
+            fig_h = go.Figure(go.Heatmap(z=z.values, x=z.columns, y=z.index, colorscale="Oranges",
+                                         text=z.round(1).astype(str).where(z.notna(), "oculto"),
+                                         texttemplate="%{text}", hoverongaps=False, colorbar_title="‰"))
+            fig_h.update_layout(title="Reclamos por mil por ciudad y canal (celdas pequeñas ocultas)",
+                                template="plotly_white", height=380, yaxis_autorange="reversed")
+            st.plotly_chart(fig_h, use_container_width=True)
+            mm = f[f["ciudad"] == "Manta"].groupby("mes", observed=True)["reclamos_registrados"].mean() * 1000
+            manta_exp = z.loc["Manta", "Express"] if "Express" in z.columns else float("nan")
+            bloques(f"Manta {g['Manta', 'tasa_reclamos']:.1f} ‰ (IC 95 %: {g['Manta', 'ic_bajo']:.0f}–"
+                    f"{g['Manta', 'ic_alto']:.0f} ‰) frente a {f['reclamos_registrados'].mean() * 1000:.1f} ‰ de promedio. "
+                    f"Canal Express de Manta: {manta_exp:.0f} ‰, la más alta de la red.",
+                    "Los reclamos se concentran en Express, por demora en entrega e incumplimiento de horario. "
+                    f"Rango mensual en Manta: {mm.min():.0f}–{mm.max():.0f} ‰.",
+                    "Plan de atención y aviso proactivo en Express. Desagregar por canal antes de escalar la medida.")
+    st.caption(FUENTE)
+
+# =====================================================================
+# 4c. Comité directivo (semana 3): del dashboard a la decisión
 # =====================================================================
 with tab_com:
     st.subheader("¿Qué hallazgos deben convertirse en decisiones el próximo trimestre?")
@@ -272,7 +407,9 @@ with tab_com:
     def pinta(v, malo):
         return "background-color: #f6d5d0" if malo else "background-color: #d9eadf"
 
-    estilo = vista.style
+    estilo = vista.style.format({"Pedidos": "{:,.0f}", "Ventas (USD)": "{:,.0f}",
+                                 vista.columns[2]: "{:.1f}", vista.columns[3]: "{:.1f}",
+                                 vista.columns[4]: "{:.2f}", vista.columns[5]: "{:.1f}"})
     for col, malo in [(f"A tiempo % (≥{u['a_tiempo']:g})", lambda v: v < u["a_tiempo"]),
                       (f"Reclamos ‰ (≤{u['tasa_reclamos']:g})", lambda v: v > u["tasa_reclamos"]),
                       (f"USD/km (≥{u['usd_por_km']:g})", lambda v: v < u["usd_por_km"]),
@@ -308,7 +445,7 @@ with tab_com:
         fig_i.update_traces(textposition="top center")
         fig_i.add_hline(y=40, line_dash="dash", line_color="gray")
         fig_i.add_vline(x=1000, line_dash="dash", line_color="gray")
-        fig_i.update_yaxes(range=[0, 105])
+        fig_i.update_yaxes(range=[0, 115])
         st.plotly_chart(fig_i, use_container_width=True)
         st.caption("Arriba a la derecha (IPO alto y volumen alto): intervenir. Arriba a la izquierda "
                    "(IPO alto y volumen bajo): investigar antes de actuar a gran escala. "
