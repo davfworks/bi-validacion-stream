@@ -267,10 +267,11 @@ with tab_hall:
                                    customdata=d[["pedidos"]],
                                    hovertemplate="<b>%{y}</b><br>%{x:,.2f}<br>Pedidos: %{customdata[0]:,}<extra></extra>"))
             if linea is not None:
-                fig.add_vline(x=linea, line_dash="dash", line_color="gray", annotation_text=etiqueta_linea)
+                fig.add_vline(x=linea, line_dash="dash", line_color="gray", annotation_text=etiqueta_linea,
+                              annotation_position="top", annotation_yshift=14)
             fig.update_yaxes(autorange="reversed")
             fig.update_xaxes(rangemode="tozero")
-            fig.update_layout(title=titulo, template="plotly_white", height=420, margin=dict(r=60))
+            fig.update_layout(title=titulo, template="plotly_white", height=440, margin=dict(r=60, t=90))
             return fig
 
         def bloques(tecnico, hallazgo, implicacion):
@@ -351,7 +352,13 @@ with tab_hall:
             fig_c.data[0].error_x = dict(type="data", symmetric=False, color="black", thickness=1,
                                          array=(th.loc[orden, "ic_alto"] - th.loc[orden, "tasa_reclamos"]).values,
                                          arrayminus=(th.loc[orden, "tasa_reclamos"] - th.loc[orden, "ic_bajo"]).values)
-            fig_c.update_xaxes(range=[0, th["ic_alto"].max() * 1.15])
+            # Los valores van a la derecha de la barra de error para que no queden tapados
+            fig_c.data[0].texttemplate = None
+            fig_c.data[0].text = None
+            fig_c.add_trace(go.Scatter(x=th.loc[orden, "ic_alto"], y=fig_c.data[0].y, mode="text",
+                                       text=[f"{v:.1f}" for v in th.loc[orden, "tasa_reclamos"]],
+                                       textposition="middle right", showlegend=False, hoverinfo="skip"))
+            fig_c.update_xaxes(range=[0, th["ic_alto"].max() * 1.2])
             st.plotly_chart(fig_c, use_container_width=True)
             st.caption("Las barras de error son el intervalo de confianza al 95 %.")
 
