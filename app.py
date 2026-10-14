@@ -197,7 +197,7 @@ with tab3:
                        color_discrete_sequence=COLOR_CANAL,
                        labels={"canal_entrega": "", "tiempo_individual_entrega_min": "Minutos"},
                        title="Tiempo de entrega por canal", template="plotly_white")
-        fig_c.update_layout(showlegend=False)
+        
         st.plotly_chart(fig_c, use_container_width=True)
 
     o3, o4 = st.columns(2)
@@ -355,7 +355,7 @@ with tab_hall:
             # Los valores van a la derecha de la barra de error para que no queden tapados
             fig_c.data[0].texttemplate = None
             fig_c.data[0].text = None
-            fig_c.add_trace(go.Scatter(x=th.loc[orden, "ic_alto"], y=fig_c.data[0].y, mode="text",
+            fig_c.add_trace(go.Scatter(x=th.loc[orden, "ic_alto + 3"], y=fig_c.data[0].y, mode="text",
                                        text=[f"{v:.1f}" for v in th.loc[orden, "tasa_reclamos"]],
                                        textposition="middle right", showlegend=False, hoverinfo="skip"))
             fig_c.update_xaxes(range=[0, th["ic_alto"].max() * 1.2])
